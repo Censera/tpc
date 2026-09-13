@@ -19,7 +19,9 @@ Small teleportation utility for Paper 26.2.
 ## Commands
 
 ```text
-/tpc [ask|here|accept|decline|bed|home]
+/tpc [ask|here|accept|decline|bed|home|spawn]
+/tpc ask|here [player|cancel|page <number>]
+/tpc home [list|set <name> [is-primary]|delete <name>|primary <name>]
 /tpr # reload
 /tpa [player|cancel|page <number>]
 /tph [player|cancel|page <number>]
@@ -27,17 +29,13 @@ Small teleportation utility for Paper 26.2.
 /decline
 /back
 /bed
-/home
-/home list
-/home set <name> [is-primary]
-/home delete <name>
-/home primary <name>
+/home [list|set <name> [is-primary]|delete <name>|primary <name>]
 /spawn
 ```
 
 `/tpa <player>` sends a request to teleport **to** that player. `/tph <player>` sends a request asking that player to teleport **to you**. The two are tracked separately so `/accept` teleports the right person regardless of which one was used.
 
-`/tpc` opens the clickable teleport menu, and also works as a shortcut for the other commands: `/tpc ask`, `/tpc here`, `/tpc accept`, `/tpc decline`, `/tpc bed`, and `/tpc home` behave the same as their standalone counterparts.
+`/tpc` opens the clickable teleport menu, and also works as a shortcut for the other commands: `/tpc ask`, `/tpc here`, `/tpc accept`, `/tpc decline`, `/tpc bed`, `/tpc home`, and `/tpc spawn` behave the same as their standalone counterparts.
 
 Normal players can use `/tpc` without the reload permission. `/tpr` reloads the configuration and requires `tpc.reload`.
 
@@ -51,9 +49,10 @@ alternative-commands:
   tpback: true
   tpbed: true
   tphome: true
+  tpspawn: true
 ```
 
-Some servers already have conflicting commands for `accept`, `decline`, `back`, `bed`, or `home`. When `alternative-commands.enable` is `true`, the corresponding flag below it turns on an equivalent shortcut command:
+Some servers already have conflicting commands for `accept`, `decline`, `back`, `bed`, `home`, or `spawn`. When `alternative-commands.enable` is `true`, the corresponding flag below it turns on an equivalent shortcut command:
 
 ```text
 /tpaccept -> /accept
@@ -61,6 +60,7 @@ Some servers already have conflicting commands for `accept`, `decline`, `back`, 
 /tpback -> /back
 /tpbed -> /bed
 /tphome -> /home
+/tpspawn -> /spawn
 ```
 
 These are not a second implementation; they call the same handlers as the primary commands. When disabled, they respond that the command is disabled instead of doing anything.
@@ -74,10 +74,10 @@ standalone-commands: true
 `/tpa`, `/tph`, `/accept`, `/decline`, `/bed`, and `/home` normally work as top-level commands. Set `standalone-commands` to `false` to turn them off; players then have to go through `/tpc`, which covers the same ground:
 
 ```text
-/tpc [<ask|here> [player|cancel|page <number>]|accept|decline|bed|home[list|set <name> [is-primary]|<delete|primary> <name>]]
+/tpc [<ask|here> [player|cancel|page <number>]|accept|decline|bed|home|spawn]
 ```
 
-`/tpr`, `/back`, and `/spawn` are not affected — `/back` and `/spawn` have no `/tpc` equivalent, and `/tpr` is an admin command, not one of these player-facing shortcuts.
+`/tpr`, `/back`, and `/spawn` are not affected — `/back` and `/spawn` are not disabled by `standalone-commands`, while `/tpr` is an admin command.
 
 ## Build
 
