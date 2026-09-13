@@ -17,6 +17,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.permissions.Permission;
+import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
@@ -41,6 +43,7 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
     public void onEnable() {
         saveDefaultConfig();
         settings = readSettings();
+        updateCommandPermissionDefaults(settings);
         homes = new HomeStore(this, settings.homeLimit());
         try {
             homes.load();
@@ -84,6 +87,32 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
             command.setExecutor(this);
             command.setTabCompleter(this);
         }
+    }
+
+    private void updateCommandPermissionDefaults(Settings current) {
+        boolean standalone = current.standaloneCommandsEnabled();
+        setPermissionDefault("tpc.request", standalone);
+        setPermissionDefault("tpc.here", standalone);
+        setPermissionDefault("tpc.accept", standalone);
+        setPermissionDefault("tpc.decline", standalone);
+        setPermissionDefault("tpc.bed", standalone);
+        setPermissionDefault("tpc.home", standalone);
+
+        boolean alternatives = current.alternativeCommandsEnabled();
+        setPermissionDefault("tpc.alternative.tpaccept", alternatives && current.altTpAccept());
+        setPermissionDefault("tpc.alternative.tpdecline", alternatives && current.altTpDecline());
+        setPermissionDefault("tpc.alternative.tpback", alternatives && current.altTpBack());
+        setPermissionDefault("tpc.alternative.tpbed", alternatives && current.altTpBed());
+        setPermissionDefault("tpc.alternative.tphome", alternatives && current.altTpHome());
+        setPermissionDefault("tpc.alternative.tpspawn", alternatives && current.altTpSpawn());
+    }
+
+    private void setPermissionDefault(String name, boolean enabled) {
+        Permission permission = Bukkit.getPluginManager().getPermission(name);
+        if (permission == null) {
+            throw new IllegalStateException("Required permission is missing from plugin.yml: " + name);
+        }
+        permission.setDefault(enabled ? PermissionDefault.TRUE : PermissionDefault.OP);
     }
 
     private Settings readSettings() {
@@ -183,8 +212,7 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
 
     private boolean handleStandalone(Player player, Function<Player, Boolean> handler) {
         if (!settings.standaloneCommandsEnabled()) {
-            player.sendMessage(error("This command is disabled on this server. Use /tpc instead."));
-            return true;
+            return false;
         }
         return handler.apply(player);
     }
@@ -230,6 +258,7 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
             Settings newSettings = readSettings();
             homes.setLimit(newSettings.homeLimit());
             settings = newSettings;
+            updateCommandPermissionDefaults(newSettings);
             sender.sendMessage(success("tpc configuration reloaded."));
             getLogger().info("Configuration reloaded by " + sender.getName() + ".");
         } catch (IllegalStateException e) {
@@ -240,11 +269,11 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
 
     private boolean showMenu(Player player) {
         player.sendMessage(Component.text("tpc", NamedTextColor.DARK_AQUA));
-        sendButtonLine(player, button("[ Ask ]", "/tpa", NamedTextColor.GREEN),
-                button("[ Here ]", "/tph", NamedTextColor.GREEN),
-                button("[ Homes ]", "/home list", NamedTextColor.YELLOW));
-        sendButtonLine(player, button("[ Bed ]", "/bed", NamedTextColor.GREEN),
-                button("[ Spawn ]", "/spawn", NamedTextColor.GREEN),
+        sendButtonLine(player, button("[ Ask ]", "/tpc ask", NamedTextColor.GREEN),
+                button("[ Here ]", "/tpc here", NamedTextColor.GREEN),
+                button("[ Homes ]", "/tpc home list", NamedTextColor.YELLOW));
+        sendButtonLine(player, button("[ Bed ]", "/tpc bed", NamedTextColor.GREEN),
+                button("[ Spawn ]", "/tpc spawn", NamedTextColor.GREEN),
                 button("[ Back ]", "/back", NamedTextColor.GOLD));
         Optional<RequestManager.IncomingRequest> incomingRequest = requests.incoming(player.getUniqueId());
         if (incomingRequest.isPresent()) {
@@ -254,13 +283,13 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
                         ? requester.getName() + " wants to teleport to you."
                         : requester.getName() + " wants you to teleport to them.";
                 player.sendMessage(info(notice));
-                sendButtonLine(player, button("[ Accept ]", "/accept", NamedTextColor.GREEN),
-                        button("[ Decline ]", "/decline", NamedTextColor.RED));
+                sendButtonLine(player, button("[ Accept ]", "/tpc accept", NamedTextColor.GREEN),
+                        button("[ Decline ]", "/tpc decline", NamedTextColor.RED));
             }
         }
         Optional<RequestManager.RequestType> outgoingType = requests.outgoingType(player.getUniqueId());
         if (outgoingType.isPresent()) {
-            String cancelCommand = outgoingType.get() == RequestManager.RequestType.TPA ? "/tpa cancel" : "/tph cancel";
+            String cancelCommand = outgoingType.get() == RequestManager.RequestType.TPA ? "/tpc ask cancel" : "/tpc here cancel";
             sendButtonLine(player, button("[ Cancel request ]", cancelCommand, NamedTextColor.RED));
         }
         return true;
@@ -308,7 +337,7 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
     }
 
     private void showPlayerPage(Player player, int page, RequestManager.RequestType type) {
-        String commandName = type == RequestManager.RequestType.TPA ? "tpa" : "tph";
+        String commandName = type == RequestManager.RequestType.TPA ? "tpc ask" : "tpc here";
         List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
         players.remove(player);
         players.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
@@ -348,8 +377,8 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
                         ? requester.getName() + " wants to teleport to you."
                         : requester.getName() + " wants you to teleport to them.";
                 target.sendMessage(info(notice));
-                sendButtonLine(target, button("[ Accept ]", "/accept", NamedTextColor.GREEN),
-                        button("[ Decline ]", "/decline", NamedTextColor.RED));
+                sendButtonLine(target, button("[ Accept ]", "/tpc accept", NamedTextColor.GREEN),
+                        button("[ Decline ]", "/tpc decline", NamedTextColor.RED));
             }
         }
     }
@@ -473,23 +502,23 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
         List<String> names = homes.names(player.getUniqueId());
         if (names.isEmpty()) {
             player.sendMessage(info("You have no home; try to set a home somewhere."));
-            sendButtonLine(player, button("[ Set home-1 here ]", "/home set home-1", NamedTextColor.GREEN));
+            sendButtonLine(player, button("[ Set home-1 here ]", "/tpc home set home-1", NamedTextColor.GREEN));
             return;
         }
         player.sendMessage(Component.text("Homes:", NamedTextColor.DARK_AQUA));
         String primary = homes.primaryName(player.getUniqueId()).orElse("");
         for (String name : names) {
-            Component line = button(name + (name.equals(primary) ? " (primary)" : ""), "/home " + name, NamedTextColor.GREEN)
+            Component line = button(name + (name.equals(primary) ? " (primary)" : ""), "/tpc home " + name, NamedTextColor.GREEN)
                     .append(Component.text(" "))
-                    .append(button("[ Primary ]", "/home primary " + name, NamedTextColor.GOLD))
+                    .append(button("[ Primary ]", "/tpc home primary " + name, NamedTextColor.GOLD))
                     .append(Component.text(" "))
-                    .append(button("[ Delete ]", "/home delete " + name, NamedTextColor.RED));
+                    .append(button("[ Delete ]", "/tpc home delete " + name, NamedTextColor.RED));
             player.sendMessage(line);
         }
         for (int slot = 1; slot <= settings.homeLimit(); slot++) {
             String defaultName = "home-" + slot;
             if (!names.contains(defaultName) && names.size() < settings.homeLimit()) {
-                sendButtonLine(player, button("[ Set " + defaultName + " here ]", "/home set " + defaultName, NamedTextColor.GREEN));
+                sendButtonLine(player, button("[ Set " + defaultName + " here ]", "/tpc home set " + defaultName, NamedTextColor.GREEN));
             }
         }
     }
