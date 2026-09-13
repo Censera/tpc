@@ -59,32 +59,32 @@ commands:
   tpaccept:
     description: Alias for /accept.
     usage: /tpaccept
-    permission: tpc.accept
+    permission: tpc.alternative.tpaccept
 
   tpdecline:
     description: Alias for /decline.
     usage: /tpdecline
-    permission: tpc.decline
+    permission: tpc.alternative.tpdecline
 
   tpback:
     description: Alias for /back.
     usage: /tpback
-    permission: tpc.back
+    permission: tpc.alternative.tpback
 
   tpbed:
     description: Alias for /bed.
     usage: /tpbed
-    permission: tpc.bed
+    permission: tpc.alternative.tpbed
 
   tphome:
     description: Alias for /home.
     usage: /tphome
-    permission: tpc.home
+    permission: tpc.alternative.tphome
 
   tpspawn:
     description: Alias for /spawn.
     usage: /tpspawn
-    permission: tpc.spawn
+    permission: tpc.alternative.tpspawn
 
 permissions:
   tpc.command:
@@ -106,4 +106,16 @@ permissions:
   tpc.home:
     default: true
   tpc.spawn:
+    default: true
+  tpc.alternative.tpaccept:
+    default: true
+  tpc.alternative.tpdecline:
+    default: true
+  tpc.alternative.tpback:
+    default: true
+  tpc.alternative.tpbed:
+    default: true
+  tpc.alternative.tphome:
+    default: true
+  tpc.alternative.tpspawn:
     default: true
