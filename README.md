@@ -18,19 +18,30 @@ Small teleportation utility for Paper 26.2.
 ## Commands
 
 ```text
-/tpce
-/tpce reload
-/tpr [player|cancel|page <number>]
-/tpa
-/tpd
-/tpb
+/tpc [ask|here|accept|decline|bed|home]
+/tpr # reload
+/tpa [player|cancel|page <number>]
+/tph [player|cancel|page <number>]
+/accept
+/decline
+/back
 /bed
 /home
 /home list
-/home set <name> [primary]
+/home set <name> [is-primary]
 /home delete <name>
 /home primary <name>
 /spawn
+```
+
+```
+alternative-commands:
+  enable: false
+  tpaccept: true
+  tpdecline: true
+  tpback: true
+  tpbed: true
+  tphome: true
 ```
 
 `/tpce` opens the clickable teleport menu. Normal players can use it without the reload permission.

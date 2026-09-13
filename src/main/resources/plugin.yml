@@ -1,55 +1,105 @@
-name: tpce
-version: 0.1.2
-main: com.censera.tpce.TpcePlugin
+name: tpc
+version: 0.2.0
+main: com.censera.tpc.TpcPlugin
 api-version: "26.2"
 author: Censera
 description: Small teleportation utility for Paper 26.2.
+
 commands:
-  tpce:
-    description: Open tpce or reload its configuration.
-    usage: /tpce [reload]
+  tpc:
+    description: Open the teleportation menu.
+    usage: /tpc [ask|here|accept|decline|bed|home]
+    permission: tpc.command
+
   tpr:
-    description: Request to teleport to a player.
-    usage: /tpr [player|cancel|page <number>]
-    permission: tpce.request
+    description: Reload tpc configuration.
+    usage: /tpr
+    permission: tpc.reload
+
   tpa:
+    description: Request to teleport to a player.
+    usage: /tpa [player|cancel|page <number>]
+    permission: tpc.request
+
+  tph:
+    description: Ask a player to teleport to you.
+    usage: /tph [player|cancel|page <number>]
+    permission: tpc.here
+
+  accept:
     description: Accept a teleport request.
-    usage: /tpa
-    permission: tpce.accept
-  tpd:
+    usage: /accept
+    permission: tpc.accept
+
+  decline:
     description: Decline a teleport request.
-    usage: /tpd
-    permission: tpce.decline
-  tpb:
+    usage: /decline
+    permission: tpc.decline
+
+  back:
     description: Teleport back to the previous location.
-    usage: /tpb
-    permission: tpce.back
+    usage: /back
+    permission: tpc.back
+
   bed:
     description: Teleport to your bed.
     usage: /bed
-    permission: tpce.bed
+    permission: tpc.bed
+
   home:
     description: Manage and teleport to homes.
-    usage: /home [name|list|set <name> [primary]|delete <name>|primary <name>]
-    permission: tpce.home
+    usage: /home [name|list|set <name> [is-primary]|delete <name>|primary <name>]
+    permission: tpc.home
+
   spawn:
     description: Teleport to server spawn.
     usage: /spawn
-    permission: tpce.spawn
+    permission: tpc.spawn
+
+  tpaccept:
+    description: Alias for /accept.
+    usage: /tpaccept
+    permission: tpc.accept
+    aliases: [tpaaccept]
+
+  tpdecline:
+    description: Alias for /decline.
+    usage: /tpdecline
+    permission: tpc.decline
+
+  tpback:
+    description: Alias for /back.
+    usage: /tpback
+    permission: tpc.back
+
+  tpbed:
+    description: Alias for /bed.
+    usage: /tpbed
+    permission: tpc.bed
+
+  tphome:
+    description: Alias for /home.
+    usage: /tphome
+    permission: tpc.home
+
 permissions:
-  tpce.reload:
+  tpc.command:
+    default: true
+  tpc.reload:
     default: op
-  tpce.request:
+  tpc.request:
     default: true
-  tpce.accept:
+  tpc.here:
     default: true
-  tpce.decline:
+  tpc.accept:
     default: true
-  tpce.back:
+  tpc.decline:
     default: true
-  tpce.bed:
+  tpc.back:
     default: true
-  tpce.home:
+  tpc.bed:
     default: true
-  tpce.spawn:
+  tpc.home:
+    default: true
+  tpc.spawn:
     default: true

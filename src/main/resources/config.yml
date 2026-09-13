@@ -1,6 +1,13 @@
 request-expiration: 60
-teleport-delay: 1
+teleport-delay: 3
 teleport-cooldown: 5
+alternative-commands:
+  enable: false
+  tpaccept: true
+  tpdecline: true
+  tpback: true
+  tpbed: true
+  tphome: true
 homes:
   limit: 3
 safety:
