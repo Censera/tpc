@@ -1,4 +1,4 @@
-package com.censera.tpce;
+package com.censera.tpc;
 
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;

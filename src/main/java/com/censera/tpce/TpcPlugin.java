@@ -1,4 +1,4 @@
-package com.censera.tpce;
+package com.censera.tpc;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -22,13 +22,15 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 
-public final class TpcePlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
+public final class TpcPlugin extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
     private static final int PLAYER_PAGE_SIZE = 6;
 
     private HomeStore homes;
@@ -50,7 +52,7 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
         requests = new RequestManager(this, () -> settings.requestExpirationSeconds(), this::notifyExpired);
         registerCommands();
         Bukkit.getPluginManager().registerEvents(this, this);
-        getLogger().info("tpce enabled with " + settings.homeLimit() + " home slots per player.");
+        getLogger().info("tpc enabled with " + settings.homeLimit() + " home slots per player.");
     }
 
     @Override
@@ -74,7 +76,8 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
     }
 
     private void registerCommands() {
-        for (String name : List.of("tpce", "tpr", "tpa", "tpd", "tpb", "bed", "home", "spawn")) {
+        for (String name : List.of("tpc", "tpr", "tpa", "tph", "accept", "decline", "back", "bed",
+                "home", "spawn", "tpaccept", "tpdecline", "tpback", "tpbed", "tphome")) {
             PluginCommand command = getCommand(name);
             if (command == null) {
                 throw new IllegalStateException("Required command is missing from plugin.yml: " + name);
@@ -100,10 +103,21 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
         if (safety == null) {
             throw new IllegalStateException("Missing configuration section: safety");
         }
+        ConfigurationSection alternative = getConfig().getConfigurationSection("alternative-commands");
+        if (alternative == null) {
+            throw new IllegalStateException("Missing configuration section: alternative-commands");
+        }
         return new Settings(requestExpiration, teleportDelay, teleportCooldown, homeLimit,
                 requiredBoolean(safety, "require-safe-destination"),
                 requiredBoolean(safety, "cancel-on-movement"),
-                requiredBoolean(safety, "cancel-on-damage"));
+                requiredBoolean(safety, "cancel-on-damage"),
+                requiredBoolean("standalone-commands"),
+                requiredBoolean(alternative, "enable"),
+                requiredBoolean(alternative, "tpaccept"),
+                requiredBoolean(alternative, "tpdecline"),
+                requiredBoolean(alternative, "tpback"),
+                requiredBoolean(alternative, "tpbed"),
+                requiredBoolean(alternative, "tphome"));
     }
 
     private int requiredPositiveInt(String path) {
@@ -122,21 +136,25 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
         return value;
     }
 
+    private boolean requiredBoolean(String path) {
+        if (!getConfig().isBoolean(path)) {
+            throw new IllegalStateException("Invalid configuration " + path + ": expected true or false");
+        }
+        return getConfig().getBoolean(path);
+    }
+
     private boolean requiredBoolean(ConfigurationSection section, String path) {
         if (!section.isBoolean(path)) {
-            throw new IllegalStateException("Invalid configuration safety." + path + ": expected true or false");
+            throw new IllegalStateException("Invalid configuration " + section.getCurrentPath() + "." + path
+                    + ": expected true or false");
         }
         return section.getBoolean(path);
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (command.getName().equalsIgnoreCase("tpce") && args.length == 1 && args[0].equalsIgnoreCase("reload")) {
-            if (!sender.hasPermission("tpce.reload")) {
-                sender.sendMessage(error("You do not have permission to reload tpce."));
-                return true;
-            }
-            reloadTpce(sender);
+        if (command.getName().equalsIgnoreCase("tpr")) {
+            handleReload(sender, args);
             return true;
         }
         if (!(sender instanceof Player player)) {
@@ -144,25 +162,74 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
             return true;
         }
         return switch (command.getName().toLowerCase(Locale.ROOT)) {
-            case "tpce" -> showMenu(player);
-            case "tpr" -> handleRequest(player, args);
-            case "tpa" -> acceptRequest(player);
-            case "tpd" -> declineRequest(player);
-            case "tpb" -> teleportBack(player);
-            case "bed" -> teleportBed(player);
-            case "home" -> handleHome(player, args);
+            case "tpc" -> handleTpc(player, args);
+            case "tpa" -> handleStandalone(player, target -> handleRequest(target, args, RequestManager.RequestType.TPA));
+            case "tph" -> handleStandalone(player, target -> handleRequest(target, args, RequestManager.RequestType.TPH));
+            case "accept" -> handleStandalone(player, this::acceptRequest);
+            case "decline" -> handleStandalone(player, this::declineRequest);
+            case "back" -> teleportBack(player);
+            case "bed" -> handleStandalone(player, this::teleportBed);
+            case "home" -> handleStandalone(player, target -> handleHome(target, args));
             case "spawn" -> teleportSpawn(player);
+            case "tpaccept" -> handleAlternative(player, settings.altTpAccept(), this::acceptRequest);
+            case "tpdecline" -> handleAlternative(player, settings.altTpDecline(), this::declineRequest);
+            case "tpback" -> handleAlternative(player, settings.altTpBack(), this::teleportBack);
+            case "tpbed" -> handleAlternative(player, settings.altTpBed(), this::teleportBed);
+            case "tphome" -> handleAlternative(player, settings.altTpHome(), target -> handleHome(target, args));
             default -> false;
         };
     }
 
-    private void reloadTpce(CommandSender sender) {
+    private boolean handleStandalone(Player player, Function<Player, Boolean> handler) {
+        if (!settings.standaloneCommandsEnabled()) {
+            player.sendMessage(error("This command is disabled on this server. Use /tpc instead."));
+            return true;
+        }
+        return handler.apply(player);
+    }
+
+    private boolean handleAlternative(Player player, boolean specificallyEnabled, Function<Player, Boolean> handler) {
+        if (!settings.alternativeCommandsEnabled() || !specificallyEnabled) {
+            player.sendMessage(error("This command is disabled on this server."));
+            return true;
+        }
+        return handler.apply(player);
+    }
+
+    private boolean handleTpc(Player player, String[] args) {
+        if (args.length == 0) {
+            return showMenu(player);
+        }
+        String[] rest = Arrays.copyOfRange(args, 1, args.length);
+        return switch (args[0].toLowerCase(Locale.ROOT)) {
+            case "ask" -> handleRequest(player, rest, RequestManager.RequestType.TPA);
+            case "here" -> handleRequest(player, rest, RequestManager.RequestType.TPH);
+            case "accept" -> acceptRequest(player);
+            case "decline" -> declineRequest(player);
+            case "bed" -> teleportBed(player);
+            case "home" -> handleHome(player, rest);
+            default -> {
+                player.sendMessage(usage("/tpc [ask|here|accept|decline|bed|home]"));
+                yield true;
+            }
+        };
+    }
+
+    private void handleReload(CommandSender sender, String[] args) {
+        if (args.length != 0) {
+            sender.sendMessage(usage("/tpr"));
+            return;
+        }
+        if (!sender.hasPermission("tpc.reload")) {
+            sender.sendMessage(error("You do not have permission to reload tpc."));
+            return;
+        }
         reloadConfig();
         try {
             Settings newSettings = readSettings();
             homes.setLimit(newSettings.homeLimit());
             settings = newSettings;
-            sender.sendMessage(success("tpce configuration reloaded."));
+            sender.sendMessage(success("tpc configuration reloaded."));
             getLogger().info("Configuration reloaded by " + sender.getName() + ".");
         } catch (IllegalStateException e) {
             sender.sendMessage(error("Configuration reload failed: " + e.getMessage()));
@@ -171,30 +238,37 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
     }
 
     private boolean showMenu(Player player) {
-        player.sendMessage(Component.text("tpce", NamedTextColor.DARK_AQUA));
-        sendButtonLine(player, button("[ Request teleport ]", "/tpr", NamedTextColor.GREEN),
+        player.sendMessage(Component.text("tpc", NamedTextColor.DARK_AQUA));
+        sendButtonLine(player, button("[ Ask ]", "/tpa", NamedTextColor.GREEN),
+                button("[ Here ]", "/tph", NamedTextColor.GREEN),
                 button("[ Homes ]", "/home list", NamedTextColor.YELLOW));
         sendButtonLine(player, button("[ Bed ]", "/bed", NamedTextColor.GREEN),
                 button("[ Spawn ]", "/spawn", NamedTextColor.GREEN),
-                button("[ Back ]", "/tpb", NamedTextColor.GOLD));
-        Optional<UUID> requesterId = requests.incomingRequester(player.getUniqueId());
-        if (requesterId.isPresent()) {
-            Player requester = Bukkit.getPlayer(requesterId.get());
+                button("[ Back ]", "/back", NamedTextColor.GOLD));
+        Optional<RequestManager.IncomingRequest> incomingRequest = requests.incoming(player.getUniqueId());
+        if (incomingRequest.isPresent()) {
+            Player requester = Bukkit.getPlayer(incomingRequest.get().requesterId());
             if (requester != null) {
-                player.sendMessage(info("Pending request from " + requester.getName() + ":"));
-                sendButtonLine(player, button("[ Accept ]", "/tpa", NamedTextColor.GREEN),
-                        button("[ Decline ]", "/tpd", NamedTextColor.RED));
+                String notice = incomingRequest.get().type() == RequestManager.RequestType.TPA
+                        ? requester.getName() + " wants to teleport to you."
+                        : requester.getName() + " wants you to teleport to them.";
+                player.sendMessage(info(notice));
+                sendButtonLine(player, button("[ Accept ]", "/accept", NamedTextColor.GREEN),
+                        button("[ Decline ]", "/decline", NamedTextColor.RED));
             }
         }
-        if (requests.hasOutgoing(player.getUniqueId())) {
-            sendButtonLine(player, button("[ Cancel request ]", "/tpr cancel", NamedTextColor.RED));
+        Optional<RequestManager.RequestType> outgoingType = requests.outgoingType(player.getUniqueId());
+        if (outgoingType.isPresent()) {
+            String cancelCommand = outgoingType.get() == RequestManager.RequestType.TPA ? "/tpa cancel" : "/tph cancel";
+            sendButtonLine(player, button("[ Cancel request ]", cancelCommand, NamedTextColor.RED));
         }
         return true;
     }
 
-    private boolean handleRequest(Player player, String[] args) {
+    private boolean handleRequest(Player player, String[] args, RequestManager.RequestType type) {
+        String commandName = type == RequestManager.RequestType.TPA ? "tpa" : "tph";
         if (args.length == 0 || args[0].equalsIgnoreCase("list")) {
-            showPlayerPage(player, 0);
+            showPlayerPage(player, 0, type);
             return true;
         }
         if (args[0].equalsIgnoreCase("cancel") && args.length == 1) {
@@ -207,13 +281,13 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
         }
         if (args[0].equalsIgnoreCase("page")) {
             if (args.length != 2) {
-                player.sendMessage(usage("/tpr page <number>"));
+                player.sendMessage(usage("/" + commandName + " page <number>"));
                 return true;
             }
             try {
                 int page = Integer.parseInt(args[1]);
                 if (page < 1) throw new NumberFormatException();
-                showPlayerPage(player, page - 1);
+                showPlayerPage(player, page - 1, type);
             } catch (NumberFormatException e) {
                 player.sendMessage(error("Page must be a positive number."));
             }
@@ -225,14 +299,15 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
                 player.sendMessage(error("Player is not online: " + args[0]));
                 return true;
             }
-            sendRequest(player, target);
+            sendRequest(player, target, type);
             return true;
         }
-        player.sendMessage(usage("/tpr [player|cancel|page <number>]"));
+        player.sendMessage(usage("/" + commandName + " [player|cancel|page <number>]"));
         return true;
     }
 
-    private void showPlayerPage(Player player, int page) {
+    private void showPlayerPage(Player player, int page, RequestManager.RequestType type) {
+        String commandName = type == RequestManager.RequestType.TPA ? "tpa" : "tph";
         List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
         players.remove(player);
         players.sort(Comparator.comparing(Player::getName, String.CASE_INSENSITIVE_ORDER));
@@ -244,19 +319,22 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
         if (page >= pageCount) page = pageCount - 1;
         int start = page * PLAYER_PAGE_SIZE;
         int end = Math.min(start + PLAYER_PAGE_SIZE, players.size());
-        player.sendMessage(info("Who do you want to teleport to? Page " + (page + 1) + "/" + pageCount));
+        String prompt = type == RequestManager.RequestType.TPA
+                ? "Who do you want to teleport to? Page "
+                : "Who do you want to invite to teleport to you? Page ";
+        player.sendMessage(info(prompt + (page + 1) + "/" + pageCount));
         for (int index = start; index < end; index++) {
             Player target = players.get(index);
-            player.sendMessage(button(target.getName(), "/tpr " + target.getName(), NamedTextColor.GREEN));
+            player.sendMessage(button(target.getName(), "/" + commandName + " " + target.getName(), NamedTextColor.GREEN));
         }
         List<Component> navigation = new ArrayList<>();
-        if (page > 0) navigation.add(button("[ Previous ]", "/tpr page " + page, NamedTextColor.YELLOW));
-        if (page + 1 < pageCount) navigation.add(button("[ Next ]", "/tpr page " + (page + 2), NamedTextColor.YELLOW));
+        if (page > 0) navigation.add(button("[ Previous ]", "/" + commandName + " page " + page, NamedTextColor.YELLOW));
+        if (page + 1 < pageCount) navigation.add(button("[ Next ]", "/" + commandName + " page " + (page + 2), NamedTextColor.YELLOW));
         if (!navigation.isEmpty()) sendButtonLine(player, navigation.toArray(Component[]::new));
     }
 
-    private void sendRequest(Player requester, Player target) {
-        RequestManager.SendOutcome outcome = requests.send(requester.getUniqueId(), target.getUniqueId());
+    private void sendRequest(Player requester, Player target, RequestManager.RequestType type) {
+        RequestManager.SendOutcome outcome = requests.send(requester.getUniqueId(), target.getUniqueId(), type);
         switch (outcome) {
             case SELF -> requester.sendMessage(error("You cannot teleport to yourself."));
             case TARGET_HAS_OTHER_REQUEST ->
@@ -265,27 +343,34 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
                     requester.sendMessage(error("You already have a request pending for " + target.getName() + "."));
             case SENT -> {
                 requester.sendMessage(success("Teleport request sent to " + target.getName() + "."));
-                target.sendMessage(info(requester.getName() + " wants to teleport to you."));
-                sendButtonLine(target, button("[ Accept ]", "/tpa", NamedTextColor.GREEN),
-                        button("[ Decline ]", "/tpd", NamedTextColor.RED));
+                String notice = type == RequestManager.RequestType.TPA
+                        ? requester.getName() + " wants to teleport to you."
+                        : requester.getName() + " wants you to teleport to them.";
+                target.sendMessage(info(notice));
+                sendButtonLine(target, button("[ Accept ]", "/accept", NamedTextColor.GREEN),
+                        button("[ Decline ]", "/decline", NamedTextColor.RED));
             }
         }
     }
 
     private boolean acceptRequest(Player target) {
-        Optional<UUID> requesterId = requests.accept(target.getUniqueId());
-        if (requesterId.isEmpty()) {
+        Optional<RequestManager.AcceptResult> result = requests.accept(target.getUniqueId());
+        if (result.isEmpty()) {
             target.sendMessage(error("You have no pending teleport request."));
             return true;
         }
-        Player requester = Bukkit.getPlayer(requesterId.get());
+        Player requester = Bukkit.getPlayer(result.get().requesterId());
         if (requester == null) {
             target.sendMessage(error("The requester is no longer online."));
             return true;
         }
         target.sendMessage(success("Teleport request accepted."));
         requester.sendMessage(success(target.getName() + " accepted your teleport request."));
-        teleports.begin(requester, target.getLocation(), target.getName());
+        if (result.get().type() == RequestManager.RequestType.TPA) {
+            teleports.begin(requester, target.getLocation(), target.getName());
+        } else {
+            teleports.begin(target, requester.getLocation(), requester.getName());
+        }
         return true;
     }
 
@@ -317,7 +402,7 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
         }
         if (args[0].equalsIgnoreCase("set")) {
             if (args.length < 2 || args.length > 3) {
-                player.sendMessage(usage("/home set <name> [primary]"));
+                player.sendMessage(usage("/home set <name> [is-primary]"));
                 return true;
             }
             String name = args[1].trim();
@@ -326,8 +411,8 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
                 return true;
             }
             boolean makePrimary = args.length == 3;
-            if (makePrimary && !args[2].equalsIgnoreCase("primary")) {
-                player.sendMessage(usage("/home set <name> [primary]"));
+            if (makePrimary && !args[2].equalsIgnoreCase("is-primary")) {
+                player.sendMessage(usage("/home set <name> [is-primary]"));
                 return true;
             }
             try {
@@ -379,7 +464,7 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
             teleports.begin(player, home.get(), "home " + args[0]);
             return true;
         }
-        player.sendMessage(usage("/home [name|list|set <name> [primary]|delete <name>|primary <name>]"));
+        player.sendMessage(usage("/home [name|list|set <name> [is-primary]|delete <name>|primary <name>]"));
         return true;
     }
 
@@ -438,7 +523,7 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
         if (!settings.cancelOnMovement()) return;
         Location from = event.getFrom();
         Location to = event.getTo();
-        if (to == null || (from.getX() == to.getX() && from.getY() == to.getY() && from.getZ() == to.getZ())) return;
+        if (to == null || (from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ())) return;
         teleports.cancel(event.getPlayer(), true);
     }
 
@@ -450,7 +535,7 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        sendButtonLine(event.getPlayer(), info("Teleport options: "), button("[ Open ]", "/tpce", NamedTextColor.AQUA));
+        sendButtonLine(event.getPlayer(), info("Teleport options: "), button("[ Open ]", "/tpc", NamedTextColor.AQUA));
     }
 
     @EventHandler
@@ -472,22 +557,48 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (!(sender instanceof Player player)) return List.of();
         String name = command.getName().toLowerCase(Locale.ROOT);
-        if (name.equals("tpr") && args.length == 1) {
-            List<String> suggestions = new ArrayList<>(List.of("cancel", "page"));
-            for (Player online : Bukkit.getOnlinePlayers()) if (!online.equals(player)) suggestions.add(online.getName());
+        if ((name.equals("tpa") || name.equals("tph")) && settings.standaloneCommandsEnabled()) {
+            return completeRequestArgs(player, args);
+        }
+        if (name.equals("home") && settings.standaloneCommandsEnabled()) {
+            return completeHomeArgs(player, args);
+        }
+        if (name.equals("tphome") && settings.alternativeCommandsEnabled() && settings.altTpHome()) {
+            return completeHomeArgs(player, args);
+        }
+        if (name.equals("tpc")) {
+            if (args.length == 1) {
+                return partial(List.of("ask", "here", "accept", "decline", "bed", "home"), args[0]);
+            }
+            if (args.length > 1) {
+                String[] rest = Arrays.copyOfRange(args, 1, args.length);
+                if (args[0].equalsIgnoreCase("ask") || args[0].equalsIgnoreCase("here")) {
+                    return completeRequestArgs(player, rest);
+                }
+                if (args[0].equalsIgnoreCase("home")) {
+                    return completeHomeArgs(player, rest);
+                }
+            }
+        }
+        return List.of();
+    }
+
+    private List<String> completeRequestArgs(Player player, String[] args) {
+        if (args.length != 1) return List.of();
+        List<String> suggestions = new ArrayList<>(List.of("cancel", "page"));
+        for (Player online : Bukkit.getOnlinePlayers()) if (!online.equals(player)) suggestions.add(online.getName());
+        return partial(suggestions, args[0]);
+    }
+
+    private List<String> completeHomeArgs(Player player, String[] args) {
+        List<String> suggestions = new ArrayList<>(List.of("list", "set", "delete", "primary"));
+        if (args.length == 1) {
+            suggestions.addAll(homes.names(player.getUniqueId()));
             return partial(suggestions, args[0]);
         }
-        if (name.equals("home")) {
-            List<String> suggestions = new ArrayList<>(List.of("list", "set", "delete", "primary"));
-            if (args.length == 1) {
-                suggestions.addAll(homes.names(player.getUniqueId()));
-                return partial(suggestions, args[0]);
-            }
-            if (args.length == 2 && (args[0].equalsIgnoreCase("delete") || args[0].equalsIgnoreCase("primary"))) {
-                return partial(homes.names(player.getUniqueId()), args[1]);
-            }
+        if (args.length == 2 && (args[0].equalsIgnoreCase("delete") || args[0].equalsIgnoreCase("primary"))) {
+            return partial(homes.names(player.getUniqueId()), args[1]);
         }
-        if (name.equals("tpce") && args.length == 1) return partial(List.of("reload"), args[0]);
         return List.of();
     }
 
@@ -502,7 +613,7 @@ public final class TpcePlugin extends JavaPlugin implements Listener, CommandExe
     }
 
     private static Component info(String message) {
-        return Component.text(message, NamedTextColor.GRAY);
+        return Component.text(message, NamedTextColor.YELLOW);
     }
 
     private static Component success(String message) {

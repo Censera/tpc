@@ -1,6 +1,7 @@
 request-expiration: 60
 teleport-delay: 3
 teleport-cooldown: 5
+standalone-commands: true
 alternative-commands:
   enable: false
   tpaccept: true

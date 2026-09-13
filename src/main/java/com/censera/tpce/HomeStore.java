@@ -1,4 +1,4 @@
-package com.censera.tpce;
+package com.censera.tpc;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;

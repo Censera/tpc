@@ -1,4 +1,4 @@
-package com.censera.tpce;
+package com.censera.tpc;
 
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -12,7 +12,13 @@ import java.util.function.BiConsumer;
 import java.util.function.IntSupplier;
 
 final class RequestManager {
+    enum RequestType { TPA, TPH }
+
     enum SendOutcome { SENT, SELF, TARGET_HAS_OTHER_REQUEST, ALREADY_PENDING_FOR_TARGET }
+
+    record IncomingRequest(UUID requesterId, RequestType type) { }
+
+    record AcceptResult(UUID requesterId, RequestType type) { }
 
     private final JavaPlugin plugin;
     private final IntSupplier requestExpirationSeconds;
@@ -27,16 +33,17 @@ final class RequestManager {
         this.onExpire = onExpire;
     }
 
-    Optional<UUID> incomingRequester(UUID targetId) {
+    Optional<IncomingRequest> incoming(UUID targetId) {
         Request request = incoming.get(targetId);
-        return request == null ? Optional.empty() : Optional.of(request.requester());
+        return request == null ? Optional.empty() : Optional.of(new IncomingRequest(request.requester(), request.type()));
     }
 
-    boolean hasOutgoing(UUID requesterId) {
-        return outgoing.containsKey(requesterId);
+    Optional<RequestType> outgoingType(UUID requesterId) {
+        Request request = outgoing.get(requesterId);
+        return request == null ? Optional.empty() : Optional.of(request.type());
     }
 
-    SendOutcome send(UUID requesterId, UUID targetId) {
+    SendOutcome send(UUID requesterId, UUID targetId, RequestType type) {
         if (requesterId.equals(targetId)) return SendOutcome.SELF;
         Request existingIncoming = incoming.get(targetId);
         if (existingIncoming != null && !existingIncoming.requester().equals(requesterId)) {
@@ -49,44 +56,32 @@ final class RequestManager {
         }
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin,
                 () -> expire(requesterId), secondsToTicks(requestExpirationSeconds.getAsInt()));
-        Request request = new Request(requesterId, targetId, task);
+        Request request = new Request(requesterId, targetId, type, task);
         outgoing.put(requesterId, request);
         incoming.put(targetId, request);
         return SendOutcome.SENT;
     }
 
-    Optional<UUID> accept(UUID targetId) {
-        return removeIncomingFor(targetId);
+    Optional<AcceptResult> accept(UUID targetId) {
+        return takeIncoming(targetId).map(request -> new AcceptResult(request.requester(), request.type()));
     }
 
     Optional<UUID> decline(UUID targetId) {
-        return removeIncomingFor(targetId);
+        return takeIncoming(targetId).map(Request::requester);
     }
 
     boolean cancelOutgoing(UUID requesterId) {
-        Request request = outgoing.remove(requesterId);
-        if (request == null) return false;
-        incoming.remove(request.target(), request);
-        request.expirationTask().cancel();
-        return true;
+        return takeOutgoing(requesterId).isPresent();
     }
 
     /** Call when {@code playerId} disconnects and was the target of a request. */
     Optional<UUID> removeIncomingFor(UUID playerId) {
-        Request request = incoming.remove(playerId);
-        if (request == null) return Optional.empty();
-        outgoing.remove(request.requester(), request);
-        request.expirationTask().cancel();
-        return Optional.of(request.requester());
+        return takeIncoming(playerId).map(Request::requester);
     }
 
     /** Call when {@code playerId} disconnects and was the requester of a request. */
     Optional<UUID> removeOutgoingFor(UUID playerId) {
-        Request request = outgoing.remove(playerId);
-        if (request == null) return Optional.empty();
-        incoming.remove(request.target(), request);
-        request.expirationTask().cancel();
-        return Optional.of(request.target());
+        return takeOutgoing(playerId).map(Request::target);
     }
 
     void shutdown() {
@@ -95,6 +90,22 @@ final class RequestManager {
         }
         incoming.clear();
         outgoing.clear();
+    }
+
+    private Optional<Request> takeIncoming(UUID playerId) {
+        Request request = incoming.remove(playerId);
+        if (request == null) return Optional.empty();
+        outgoing.remove(request.requester(), request);
+        request.expirationTask().cancel();
+        return Optional.of(request);
+    }
+
+    private Optional<Request> takeOutgoing(UUID playerId) {
+        Request request = outgoing.remove(playerId);
+        if (request == null) return Optional.empty();
+        incoming.remove(request.target(), request);
+        request.expirationTask().cancel();
+        return Optional.of(request);
     }
 
     private void expire(UUID requesterId) {
@@ -108,5 +119,5 @@ final class RequestManager {
         return seconds * 20L;
     }
 
-    private record Request(UUID requester, UUID target, BukkitTask expirationTask) { }
+    private record Request(UUID requester, UUID target, RequestType type, BukkitTask expirationTask) { }
 }
