@@ -183,7 +183,8 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
 
     private boolean handleStandalone(Player player, Function<Player, Boolean> handler) {
         if (!settings.standaloneCommandsEnabled()) {
-            return false;
+            player.sendMessage(error("This command is disabled on this server. Use /tpc instead."));
+            return true;
         }
         return handler.apply(player);
     }
