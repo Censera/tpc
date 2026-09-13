@@ -1,6 +1,7 @@
 package com.censera.tpc;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -35,7 +36,7 @@ final class TeleportService {
         long cooldown = cooldownUntil.getOrDefault(id, 0L);
         if (cooldown > now) {
             long seconds = (cooldown - now + 999L) / 1000L;
-            player.sendMessage(Component.text("You cannot teleport yet. Please wait " + seconds + " seconds."));
+            player.sendMessage(Component.text("You cannot teleport yet. Please wait " + seconds + " seconds.", NamedTextColor.GRAY));
             return;
         }
         World world = destination.getWorld();
@@ -54,7 +55,7 @@ final class TeleportService {
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin,
                 () -> completeTeleport(player), secondsToTicks(settings.teleportDelaySeconds()));
         pendingTeleports.put(id, new PendingTeleport(source, target, reason, task));
-        player.sendMessage(Component.text("Teleporting in " + settings.teleportDelaySeconds() + " seconds..."));
+        player.sendMessage(Component.text("Teleporting in " + settings.teleportDelaySeconds() + " seconds...", NamedTextColor.GRAY));
     }
 
     private void completeTeleport(Player player) {
@@ -79,14 +80,14 @@ final class TeleportService {
         if (settings.teleportCooldownSeconds() > 0) {
             cooldownUntil.put(id, System.currentTimeMillis() + settings.teleportCooldownSeconds() * 1000L);
         }
-        player.sendMessage(Component.text("Teleported to " + pending.reason() + "."));
+        player.sendMessage(Component.text("Teleported to " + pending.reason() + ".", NamedTextColor.GRAY));
     }
 
     void cancel(Player player, boolean notify) {
         PendingTeleport pending = pendingTeleports.remove(player.getUniqueId());
         if (pending == null) return;
         pending.task().cancel();
-        if (notify) player.sendMessage(Component.text("Teleport cancelled."));
+        if (notify) player.sendMessage(Component.text("Teleport cancelled.", NamedTextColor.GRAY));
     }
 
     Optional<Location> backLocation(UUID playerId) {
