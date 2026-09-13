@@ -8,7 +8,7 @@ description: Small teleportation utility for Paper 26.2.
 commands:
   tpc:
     description: Open the teleportation menu.
-    usage: /tpc [ask|here|accept|decline|bed|home]
+    usage: /tpc [ask|here|accept|decline|bed|home|spawn]
     permission: tpc.command
 
   tpr:
@@ -60,7 +60,6 @@ commands:
     description: Alias for /accept.
     usage: /tpaccept
     permission: tpc.accept
-    aliases: [tpaaccept]
 
   tpdecline:
     description: Alias for /decline.
@@ -81,6 +80,11 @@ commands:
     description: Alias for /home.
     usage: /tphome
     permission: tpc.home
+
+  tpspawn:
+    description: Alias for /spawn.
+    usage: /tpspawn
+    permission: tpc.spawn
 
 permissions:
   tpc.command:
