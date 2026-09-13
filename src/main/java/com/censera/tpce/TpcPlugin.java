@@ -15,7 +15,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -77,7 +76,7 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
 
     private void registerCommands() {
         for (String name : List.of("tpc", "tpr", "tpa", "tph", "accept", "decline", "back", "bed",
-                "home", "spawn", "tpaccept", "tpdecline", "tpback", "tpbed", "tphome")) {
+                "home", "spawn", "tpaccept", "tpdecline", "tpback", "tpbed", "tphome", "tpspawn")) {
             PluginCommand command = getCommand(name);
             if (command == null) {
                 throw new IllegalStateException("Required command is missing from plugin.yml: " + name);
@@ -117,7 +116,8 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
                 requiredBoolean(alternative, "tpdecline"),
                 requiredBoolean(alternative, "tpback"),
                 requiredBoolean(alternative, "tpbed"),
-                requiredBoolean(alternative, "tphome"));
+                requiredBoolean(alternative, "tphome"),
+                requiredBoolean(alternative, "tpspawn"));
     }
 
     private int requiredPositiveInt(String path) {
@@ -176,22 +176,21 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
             case "tpback" -> handleAlternative(player, settings.altTpBack(), this::teleportBack);
             case "tpbed" -> handleAlternative(player, settings.altTpBed(), this::teleportBed);
             case "tphome" -> handleAlternative(player, settings.altTpHome(), target -> handleHome(target, args));
+            case "tpspawn" -> handleAlternative(player, settings.altTpSpawn(), this::teleportSpawn);
             default -> false;
         };
     }
 
     private boolean handleStandalone(Player player, Function<Player, Boolean> handler) {
         if (!settings.standaloneCommandsEnabled()) {
-            player.sendMessage(error("This command is disabled on this server. Use /tpc instead."));
-            return true;
+            return false;
         }
         return handler.apply(player);
     }
 
     private boolean handleAlternative(Player player, boolean specificallyEnabled, Function<Player, Boolean> handler) {
         if (!settings.alternativeCommandsEnabled() || !specificallyEnabled) {
-            player.sendMessage(error("This command is disabled on this server."));
-            return true;
+            return false;
         }
         return handler.apply(player);
     }
@@ -208,8 +207,9 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
             case "decline" -> declineRequest(player);
             case "bed" -> teleportBed(player);
             case "home" -> handleHome(player, rest);
+            case "spawn" -> teleportSpawn(player);
             default -> {
-                player.sendMessage(usage("/tpc [ask|here|accept|decline|bed|home]"));
+                player.sendMessage(usage("/tpc [ask|here|accept|decline|bed|home|spawn]"));
                 yield true;
             }
         };
@@ -534,11 +534,6 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
     }
 
     @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
-        sendButtonLine(event.getPlayer(), info("Teleport options: "), button("[ Open ]", "/tpc", NamedTextColor.AQUA));
-    }
-
-    @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
@@ -568,7 +563,7 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
         }
         if (name.equals("tpc")) {
             if (args.length == 1) {
-                return partial(List.of("ask", "here", "accept", "decline", "bed", "home"), args[0]);
+                return partial(List.of("ask", "here", "accept", "decline", "bed", "home", "spawn"), args[0]);
             }
             if (args.length > 1) {
                 String[] rest = Arrays.copyOfRange(args, 1, args.length);
@@ -613,7 +608,7 @@ public final class TpcPlugin extends JavaPlugin implements Listener, CommandExec
     }
 
     private static Component info(String message) {
-        return Component.text(message, NamedTextColor.YELLOW);
+        return Component.text(message, NamedTextColor.GRAY);
     }
 
     private static Component success(String message) {
