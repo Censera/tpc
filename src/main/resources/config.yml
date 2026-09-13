@@ -9,6 +9,7 @@ alternative-commands:
   tpback: true
   tpbed: true
   tphome: true
+  tpspawn: true
 homes:
   limit: 3
 safety:
