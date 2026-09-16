@@ -1,7 +1,9 @@
 request-expiration: 60
 teleport-delay: 3
 teleport-cooldown: 5
+
 standalone-commands: true
+
 alternative-commands:
   enable: false
   tpaccept: true
@@ -10,8 +12,10 @@ alternative-commands:
   tpbed: true
   tphome: true
   tpspawn: true
+
 homes:
   limit: 3
+
 safety:
   require-safe-destination: false
   cancel-on-movement: false
